@@ -788,7 +788,7 @@ def draw_model_info(layout, model, context):
     row = ui_model_props.row()
     row.label(text="{}".format(model.title), icon='OBJECT_DATA')
     row.operator("wm.sketchfab_view", text="", icon='LINKED').model_uid = model.uid
-    
+
     ui_model_props.label(text='{}'.format(model.author), icon='ARMATURE_DATA')
 
     if model.license:
@@ -1289,6 +1289,7 @@ class SketchfabExportPanel(View3DPanel, bpy.types.Panel):
         col.prop(props, "tags")
         col.prop(props, "draft")
         col.prop(props, "private")
+        col.prop(props, "info")
         if props.private:
             col.prop(props, "password")
 
@@ -1615,6 +1616,11 @@ class SketchfabExportProps(bpy.types.PropertyGroup):
         description="Active project",
         update=refresh_orgs
     )
+    info : BoolProperty(
+            name="Show Filesize & Stop",
+            description="Show filesize and don't upload",
+            default=False,
+            )
 
 
 class _SketchfabState:
@@ -1676,28 +1682,31 @@ def upload(filepath, filename):
 
     _headers = get_sketchfab_props().skfb_api.headers
 
-    try:
-        api = get_sketchfab_props().skfb_api
-        if len(api.user_orgs) and api.use_org_profile:
-            url = "%s/%s/models" % (Config.SKETCHFAB_ORGS, api.active_org["uid"])
-            _data["orgProject"] = props.active_project
-        else:
-            url = Config.SKETCHFAB_MODEL
+    if not props.info:
+        try:
+            api = get_sketchfab_props().skfb_api
+            if len(api.user_orgs) and api.use_org_profile:
+                url = "%s/%s/models" % (Config.SKETCHFAB_ORGS, api.active_org["uid"])
+                _data["orgProject"] = props.active_project
+            else:
+                url = Config.SKETCHFAB_MODEL
 
-        r = requests.post(
-            url,
-            data    = _data,
-            files   = _files,
-            headers = _headers
-        )
-    except requests.exceptions.RequestException as e:
-        return upload_report("Upload failed. Error: %s" % str(e), 'WARNING')
+            r = requests.post(
+                url,
+                data    = _data,
+                files   = _files,
+                headers = _headers
+            )
+        except requests.exceptions.RequestException as e:
+            return upload_report("Upload failed. Error: %s" % str(e), 'WARNING')
 
-    result = r.json()
-    if r.status_code != requests.codes.created:
-        return upload_report("Upload failed. Error: %s" % result["error"], 'WARNING')
-    sf_state.model_url = Config.SKETCHFAB_URL + "/models/" + result["uid"]
-    return upload_report("Upload complete. Available on your sketchfab.com dashboard.", 'INFO')
+        result = r.json()
+        if r.status_code != requests.codes.created:
+            return upload_report("Upload failed. Error: %s" % result["error"], 'WARNING')
+        sf_state.model_url = Config.SKETCHFAB_URL + "/models/" + result["uid"]
+        return upload_report("Upload complete. Available on your sketchfab.com dashboard.", 'INFO')
+    else:
+        return upload_report("Info complete, file size: {}".format(sf_state.size_label), 'INFO')
 
 
 class ExportSketchfab(bpy.types.Operator):
@@ -1797,7 +1806,7 @@ class ExportSketchfab(bpy.types.Operator):
 
         wm.modal_handler_add(self)
         self._timer = wm.event_timer_add(1.0, window=context.window)
-        
+
         return {'RUNNING_MODAL'}
 
     def cancel(self, context):
